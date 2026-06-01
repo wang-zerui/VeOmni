@@ -33,6 +33,7 @@ logger = logging.get_logger(__name__)
 #   ├── wandb.*              → WandbConfig
 #   ├── profile.*            → ProfileConfig
 #   ├── gradient_checkpointing.*  → GradientCheckpointingConfig
+#   ├── cuda_graph.*         → CudaGraphConfig
 #   ├── accelerator.*        → AcceleratorConfig
 #   │   ├── fsdp_config.*    → FSDPConfig
 #   │   |   └── mixed_precision.* → MixedPrecisionConfig
@@ -233,6 +234,37 @@ class GradientCheckpointingConfig:
     enable_reentrant: bool = field(
         default=False,
         metadata={"help": "Use reentrant gradient checkpointing."},
+    )
+
+
+@dataclass
+class CudaGraphConfig:
+    """train.cuda_graph.* — CUDA graph capture settings."""
+
+    enable: bool = field(
+        default=False,
+        metadata={"help": "Enable CUDA graph capture for text decoder modules."},
+    )
+    scope: Literal["auto", "layer", "attn"] = field(
+        default="auto",
+        metadata={
+            "help": (
+                "CUDA graph capture scope. 'auto' captures dense decoder layers and only attention inside "
+                "unpadded MoE layers; 'layer' captures whole decoder layers; 'attn' captures only attention modules."
+            )
+        },
+    )
+    num_warmup_steps: int = field(
+        default=3,
+        metadata={"help": "Number of eager calls for each layer/shape before CUDA graph capture."},
+    )
+    max_graphs_per_layer: int = field(
+        default=16,
+        metadata={"help": "Maximum number of shape-specialized CUDA graphs cached per layer."},
+    )
+    strict: bool = field(
+        default=False,
+        metadata={"help": "Raise on CUDA graph capture failure instead of falling back to eager."},
     )
 
 
@@ -508,10 +540,6 @@ class TrainingArguments:
         default=42,
         metadata={"help": "Random seed."},
     )
-    enable_compile: bool = field(
-        default=False,
-        metadata={"help": "Enable torch compile."},
-    )
     max_steps: Optional[int] = field(
         default=None,
         metadata={"help": "Max training steps per epoch. (for debug)"},
@@ -532,6 +560,7 @@ class TrainingArguments:
     wandb: WandbConfig = field(default_factory=WandbConfig)
     profile: ProfileConfig = field(default_factory=ProfileConfig)
     gradient_checkpointing: GradientCheckpointingConfig = field(default_factory=GradientCheckpointingConfig)
+    cuda_graph: CudaGraphConfig = field(default_factory=CudaGraphConfig)
     accelerator: AcceleratorConfig = field(default_factory=AcceleratorConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
 
@@ -1165,6 +1194,31 @@ class VeOmniArguments:
             else:
                 self.train.pad_to_length = self.train.micro_batch_size * self.data.max_seq_len
                 logger.info_rank0(f"set pad_to_length = micro_batch_size * max_seq_len = {self.train.pad_to_length}")
+
+        if self.train.cuda_graph.enable:
+            if self.train.cuda_graph.num_warmup_steps < 0:
+                raise ValueError("train.cuda_graph.num_warmup_steps must be >= 0.")
+            if self.train.cuda_graph.max_graphs_per_layer <= 0:
+                raise ValueError("train.cuda_graph.max_graphs_per_layer must be > 0.")
+            if self.train.cuda_graph.scope not in ("auto", "layer", "attn"):
+                raise ValueError("train.cuda_graph.scope must be one of: 'auto', 'layer', 'attn'.")
+            if self.train.world_size > 1 and self.train.accelerator.fsdp_config.fsdp_mode != "fsdp2":
+                raise ValueError(
+                    "train.cuda_graph.enable=True with distributed training currently requires "
+                    "train.accelerator.fsdp_config.fsdp_mode='fsdp2'."
+                )
+            if self.train.dyn_bsz and not self.train.pad_to_length:
+                logger.warning_rank0(
+                    "train.cuda_graph.enable=True with dynamic batching but without pad_to_length can create many "
+                    "shape-specialized graphs. Prefer train.pad_to_length=True for stable packed shapes."
+                )
+            if self.train.gradient_checkpointing.enable:
+                raise ValueError(
+                    "train.cuda_graph.enable=True cannot be combined with train.gradient_checkpointing.enable=True. "
+                    "VeOmni's current gradient checkpointing path checkpoints whole layers, which conflicts with "
+                    "per-layer CUDA graph capture. Disable gradient checkpointing for this PR; selective activation "
+                    "recompute support should be implemented separately."
+                )
 
     def compute_train_steps(self, dataset_length: Optional[int] = None):
         if self.train.dyn_bsz:

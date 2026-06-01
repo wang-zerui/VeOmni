@@ -88,6 +88,15 @@ from .callbacks import (
 logger = logging.get_logger(__name__)
 
 
+def get_router_aux_loss_mask_collate_info(model_config) -> Dict[str, tuple]:
+    model_type = getattr(model_config, "model_type", None)
+    text_config = getattr(model_config, "text_config", None)
+    text_model_type = getattr(text_config, "model_type", None)
+    if model_type in ("qwen3_5_moe", "qwen3_5_moe_text") or text_model_type == "qwen3_5_moe_text":
+        return {"router_aux_loss_mask": (-1, False, 0, 1)}
+    return {}
+
+
 class BackgroundPrefetcher:
     """
     Prefetches batches from a dataloader in a background thread to overlap data loading
@@ -449,9 +458,11 @@ class BaseTrainer(Stateful, ABC):
     def _build_collate_fn(self):
         seq_classification = self.args.data.data_type == "classification"
         pad_to_length = self.args.train.pad_to_length
+        data_collate_info = get_router_aux_loss_mask_collate_info(self.model_config)
         self.collate_fn = MainCollator(
             pad_to_length=pad_to_length,
             seq_classification=seq_classification,
+            data_collate_info=data_collate_info,
         )
 
     def _build_dataloader(self):
@@ -512,6 +523,7 @@ class BaseTrainer(Stateful, ABC):
             broadcast_model_weights_from_rank0=args.train.broadcast_model_weights_from_rank0,
             max_load_broadcast_size=args.train.accelerator.fsdp_config.max_load_broadcast_size,
             muon_expert_zero_comm=muon_expert_zero_comm,
+            cuda_graph=args.train.cuda_graph,
             **kwargs,
         )
         self.model.train()
