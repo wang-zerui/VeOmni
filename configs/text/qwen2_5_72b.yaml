@@ -1,0 +1,56 @@
+model:
+  model_path: Qwen/Qwen2.5-72B
+  ops_implementation:
+    attn_implementation: flash_attention_2
+
+data:
+  train_path: minipile_train_parquet
+  train_size: 1000000
+  dataloader:
+    type: native
+    drop_last: true
+  datasets_type: mapping
+  data_type: plaintext
+  max_seq_len: 4096
+  text_keys: text
+  dyn_bsz_buffer_size: 200
+
+train:
+  pad_to_length: true
+  accelerator:
+    ulysses_size: 1
+    fsdp_config:
+      fsdp_mode: fsdp2
+      mixed_precision:
+        enable: true
+    offload:
+      enable_activation: false
+  gradient_checkpointing:
+    enable: false
+  global_batch_size: 512
+  micro_batch_size: 1
+  bsz_warmup_ratio: 0
+  optimizer:
+    type: adamw
+    lr: 1.0e-5
+    lr_min: 1.0e-6
+    lr_start: 0.0
+    lr_warmup_ratio: 0.1
+    lr_decay_style: cosine
+    lr_decay_ratio: 1.0
+    weight_decay: 0.1
+    max_grad_norm: 1.0
+  max_steps: 500
+  num_train_epochs: 1
+  init_device: meta
+  enable_full_determinism: true
+  empty_cache_steps: 500
+  checkpoint:
+    output_dir: Qwen2.5-72B-minipile-cg-ab
+    manager: dcp
+    save_steps: 0
+    save_epochs: 0
+    save_hf_weights: false
+  wandb:
+    project: VeOmni
+    name: Qwen2.5-72B-minipile-cg-ab
