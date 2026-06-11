@@ -385,12 +385,11 @@ class _LazyCudaGraphForward:
         if state.graphed_callable is not None:
             return state.graphed_callable(*tensor_args, *(item.tensor for item in state_tensors))
 
-        graph_tensor_args = tensor_args + tuple(item.tensor for item in state_tensors)
-        state.sample_args = tuple(_clone_sample_arg(tensor) for tensor in graph_tensor_args)
         if state.warmup_calls < self.num_warmup_steps:
             state.warmup_calls += 1
             return self._fallback(*args, **kwargs)
 
+        graph_tensor_args = tensor_args + tuple(item.tensor for item in state_tensors)
         state_names = tuple(item.name for item in state_tensors)
         graph_forward_cls = _GraphForwardCallable if state_names else _GraphForwardModule
         state.graph_module = graph_forward_cls(
@@ -402,6 +401,7 @@ class _LazyCudaGraphForward:
         )
 
         try:
+            state.sample_args = tuple(_clone_sample_arg(tensor) for tensor in graph_tensor_args)
             state.graphed_callable = torch.cuda.make_graphed_callables(
                 state.graph_module,
                 state.sample_args,
