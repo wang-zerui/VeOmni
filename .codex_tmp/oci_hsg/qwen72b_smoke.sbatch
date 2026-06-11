@@ -42,6 +42,8 @@ export VEOMNI_TORCHRUN_NODE_RANK="${SLURM_NODEID}"
 export VEOMNI_GLOBAL_BATCH_SIZE="'"${GLOBAL_BATCH_SIZE}"'"
 export MASTER_ADDR="'"${MASTER_ADDR}"'"
 export MASTER_PORT="'"${MASTER_PORT}"'"
+export HF_HOME="/tmp/veomni_hf_${SLURM_JOB_ID}_${SLURM_NODEID}"
+export HF_DATASETS_CACHE="/tmp/veomni_hf_datasets_${SLURM_JOB_ID}_${SLURM_NODEID}"
 cd "${VEOMNI_CG_WORK}/VeOmni"
 
 python - <<PY
