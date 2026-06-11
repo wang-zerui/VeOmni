@@ -24,6 +24,7 @@ def note(message: str) -> None:
 def main() -> None:
     faulthandler.enable(file=sys.stderr)
     faulthandler.dump_traceback_later(120, repeat=True, file=sys.stderr)
+    os.environ.setdefault("MODELING_BACKEND", "hf")
     note("start")
     ROOT.mkdir(parents=True, exist_ok=True)
     CFG.mkdir(parents=True, exist_ok=True)

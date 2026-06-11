@@ -25,6 +25,7 @@ srun --ntasks=1 --nodes=1 --gres=gpu:4 \
 set -euo pipefail
 set -x
 export PYTHONUNBUFFERED=1
+export MODELING_BACKEND=hf
 export VEOMNI_CG_WORK="'"${WORK}"'"
 export DEPS="${VEOMNI_CG_WORK}/deps"
 export PYTHONPATH="${DEPS}:${VEOMNI_CG_WORK}/VeOmni:${PYTHONPATH:-}"
