@@ -85,7 +85,7 @@ def run_case(name: str, extra: list[str]) -> dict:
         "--train.accelerator.fsdp_config.mixed_precision.enable=True",
         "--train.accelerator.ulysses_size=1",
         "--train.accelerator.ep_size=1",
-        "--model.ops_implementation.attn_implementation=flash_attention_2",
+        "--model.ops_implementation.attn_implementation=eager",
         "--model.ops_implementation.moe_implementation=eager",
         "--model.ops_implementation.cross_entropy_loss_implementation=eager",
         "--model.ops_implementation.rms_norm_implementation=eager",
