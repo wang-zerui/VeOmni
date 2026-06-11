@@ -4,7 +4,7 @@
 #SBATCH --qos=short
 #SBATCH -N 2
 #SBATCH --gres=gpu:4
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH -J veomni-qwen72b-cg
 #SBATCH -o /lustre/fsw/portfolios/nvr/projects/nvr_elm_llm/zeruiw/veomni_cg_fsdp4/logs/qwen72b-smoke-%j.out
 
@@ -40,6 +40,7 @@ export VEOMNI_TORCHRUN_NNODES="'"${SLURM_NNODES}"'"
 export VEOMNI_TORCHRUN_LOCAL_WORLD_SIZE=4
 export VEOMNI_TORCHRUN_NODE_RANK="${SLURM_NODEID}"
 export VEOMNI_GLOBAL_BATCH_SIZE="'"${GLOBAL_BATCH_SIZE}"'"
+export VEOMNI_MAX_STEPS=500
 export MASTER_ADDR="'"${MASTER_ADDR}"'"
 export MASTER_PORT="'"${MASTER_PORT}"'"
 export HF_HOME="/tmp/veomni_hf_${SLURM_JOB_ID}_${SLURM_NODEID}"

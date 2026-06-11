@@ -19,6 +19,7 @@ NODE_RANK = int(os.environ.get("VEOMNI_TORCHRUN_NODE_RANK", "0"))
 MASTER_ADDR = os.environ.get("MASTER_ADDR", "127.0.0.1")
 MASTER_PORT = os.environ.get("MASTER_PORT")
 GLOBAL_BATCH_SIZE = int(os.environ.get("VEOMNI_GLOBAL_BATCH_SIZE", str(LOCAL_WORLD_SIZE * NNODES)))
+MAX_STEPS = int(os.environ.get("VEOMNI_MAX_STEPS", "500"))
 
 
 def note(message: str) -> None:
@@ -78,7 +79,7 @@ def run_case(name: str, train_path: str, extra: list[str]) -> dict:
         "--train.init_device=meta",
         "--train.bsz_warmup_ratio=0",
         "--train.num_train_epochs=1",
-        "--train.max_steps=2",
+        f"--train.max_steps={MAX_STEPS}",
         "--train.checkpoint.save_epochs=0",
         "--train.checkpoint.save_steps=0",
         "--train.checkpoint.save_hf_weights=False",
@@ -145,6 +146,7 @@ def main() -> None:
                 "master_addr": MASTER_ADDR,
                 "master_port": MASTER_PORT,
                 "global_batch_size": GLOBAL_BATCH_SIZE,
+                "max_steps": MAX_STEPS,
             },
             sort_keys=True,
         )
@@ -155,7 +157,8 @@ def main() -> None:
     prepare_config()
     from tests.tools import DummyDataset
 
-    dummy = DummyDataset(seq_len=128, dataset_type="text")
+    num_samples = max(GLOBAL_BATCH_SIZE * (MAX_STEPS + 8), 1024)
+    dummy = DummyDataset(num_samples=num_samples, seq_len=128, dataset_type="text")
     train_path = dummy.save_path
     note(f"dummy dataset: {train_path}")
     cuda_graph = run_case(
