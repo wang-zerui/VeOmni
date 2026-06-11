@@ -20,6 +20,11 @@ MASTER_ADDR = os.environ.get("MASTER_ADDR", "127.0.0.1")
 MASTER_PORT = os.environ.get("MASTER_PORT")
 GLOBAL_BATCH_SIZE = int(os.environ.get("VEOMNI_GLOBAL_BATCH_SIZE", str(LOCAL_WORLD_SIZE * NNODES)))
 MAX_STEPS = int(os.environ.get("VEOMNI_MAX_STEPS", "500"))
+INIT_RANGE = float(os.environ.get("VEOMNI_INIT_RANGE", "0.006"))
+LR = float(os.environ.get("VEOMNI_LR", "1.5e-4"))
+LR_MIN = float(os.environ.get("VEOMNI_LR_MIN", "1.5e-6"))
+LR_WARMUP_RATIO = float(os.environ.get("VEOMNI_LR_WARMUP_RATIO", "0.1"))
+WEIGHT_DECAY = float(os.environ.get("VEOMNI_WEIGHT_DECAY", "0.1"))
 
 
 def note(message: str) -> None:
@@ -42,9 +47,12 @@ def prepare_config() -> None:
         fallback = WORK / "VeOmni" / "configs" / "model_configs" / "qwen" / "Qwen2-72B.json"
         shutil.copyfile(fallback, CONFIG_DIR / "config.json")
     cfg = json.loads((CONFIG_DIR / "config.json").read_text())
+    cfg["initializer_range"] = INIT_RANGE
+    (CONFIG_DIR / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
     keys = [
         "model_type",
         "hidden_size",
+        "initializer_range",
         "intermediate_size",
         "num_hidden_layers",
         "num_attention_heads",
@@ -87,10 +95,13 @@ def run_case(name: str, train_path: str, extra: list[str]) -> dict:
         "--train.enable_batch_invariant_mode=False",
         "--train.gradient_checkpointing.enable=False",
         "--train.optimizer.type=anyprecision_adamw",
-        "--train.optimizer.lr=0",
-        "--train.optimizer.lr_min=0",
+        f"--train.optimizer.lr={LR}",
+        f"--train.optimizer.lr_min={LR_MIN}",
         "--train.optimizer.lr_start=0",
-        "--train.optimizer.weight_decay=0",
+        f"--train.optimizer.lr_warmup_ratio={LR_WARMUP_RATIO}",
+        "--train.optimizer.lr_decay_style=cosine",
+        "--train.optimizer.lr_decay_ratio=1.0",
+        f"--train.optimizer.weight_decay={WEIGHT_DECAY}",
         "--train.accelerator.fsdp_config.fsdp_mode=fsdp2",
         "--train.accelerator.fsdp_config.mixed_precision.enable=False",
         "--train.accelerator.ulysses_size=1",
@@ -146,7 +157,12 @@ def main() -> None:
                 "master_addr": MASTER_ADDR,
                 "master_port": MASTER_PORT,
                 "global_batch_size": GLOBAL_BATCH_SIZE,
+                "init_range": INIT_RANGE,
+                "lr": LR,
+                "lr_min": LR_MIN,
+                "lr_warmup_ratio": LR_WARMUP_RATIO,
                 "max_steps": MAX_STEPS,
+                "weight_decay": WEIGHT_DECAY,
             },
             sort_keys=True,
         )
