@@ -1,0 +1,56 @@
+#!/bin/bash
+#SBATCH -A nvr_elm_llm
+#SBATCH -p batch
+#SBATCH --qos=interactive
+#SBATCH -N 1
+#SBATCH --gres=gpu:4
+#SBATCH --time=00:30:00
+#SBATCH -J veomni-cg-fsdp4
+#SBATCH -o /lustre/fsw/portfolios/nvr/projects/nvr_elm_llm/zeruiw/veomni_cg_fsdp4/logs/slurm-%j.out
+
+set -euo pipefail
+
+WORK=/lustre/fsw/portfolios/nvr/projects/nvr_elm_llm/zeruiw/veomni_cg_fsdp4
+IMAGE=nvcr.io#nvidia/pytorch:25.05-py3
+
+echo "job_id=${SLURM_JOB_ID}"
+echo "node=${SLURM_NODELIST}"
+date
+
+srun --ntasks=1 --nodes=1 --gres=gpu:4 \
+  --container-image="${IMAGE}" \
+  --container-mounts=/lustre:/lustre \
+  --container-remap-root \
+  bash -lc '
+set -euo pipefail
+export VEOMNI_CG_WORK="'"${WORK}"'"
+export DEPS="${VEOMNI_CG_WORK}/deps"
+export PYTHONPATH="${DEPS}:${VEOMNI_CG_WORK}/VeOmni:${PYTHONPATH:-}"
+mkdir -p "${DEPS}" "${VEOMNI_CG_WORK}/bench"
+cd "${VEOMNI_CG_WORK}/VeOmni"
+
+python - <<PY
+import torch
+print("TORCH", torch.__version__, "CUDA", torch.version.cuda, "NGPU", torch.cuda.device_count(), flush=True)
+for idx in range(torch.cuda.device_count()):
+    print("GPU", idx, torch.cuda.get_device_name(idx), flush=True)
+PY
+
+python - <<PY
+missing = []
+mods = ["transformers", "datasets", "einops", "rich"]
+for mod in mods:
+    try:
+        __import__(mod)
+    except Exception:
+        missing.append(mod)
+if missing:
+    print("MISSING_DEPS", ",".join(missing), flush=True)
+    raise SystemExit(3)
+print("DEPS_OK", flush=True)
+PY
+
+python "${VEOMNI_CG_WORK}/run_ab_fsdp4.py"
+'
+
+date
