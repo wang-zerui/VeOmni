@@ -1,8 +1,10 @@
+import faulthandler
 import json
 import math
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -15,7 +17,14 @@ OUT = ROOT / "out"
 TRAIN_SCRIPT = str(WORK / "VeOmni" / "tests" / "train_scripts" / "train_text_test.py")
 
 
+def note(message: str) -> None:
+    print(f"[run_ab_fsdp4] {time.strftime('%Y-%m-%d %H:%M:%S')} {message}", flush=True)
+
+
 def main() -> None:
+    faulthandler.enable(file=sys.stderr)
+    faulthandler.dump_traceback_later(120, repeat=True, file=sys.stderr)
+    note("start")
     ROOT.mkdir(parents=True, exist_ok=True)
     CFG.mkdir(parents=True, exist_ok=True)
     config = {
@@ -40,22 +49,31 @@ def main() -> None:
         "vocab_size": 1024,
     }
     (CFG / "config.json").write_text(json.dumps(config, indent=2))
+    note(f"wrote config: {CFG / 'config.json'}")
 
     os.chdir(WORK / "VeOmni")
     if WEIGHTS.exists():
+        note(f"remove old weights: {WEIGHTS}")
         shutil.rmtree(WEIGHTS)
+    note("import test helpers and transformers")
     from tests.tools import DummyDataset
     from transformers import LlamaConfig, LlamaForCausalLM
 
+    note("build tiny model")
     model = LlamaForCausalLM(LlamaConfig.from_pretrained(CFG))
+    note(f"save tiny weights: {WEIGHTS}")
     model.save_pretrained(WEIGHTS)
     del model
+    note("tiny weights saved")
 
+    note("create dummy dataset")
     dummy = DummyDataset(seq_len=128, dataset_type="text")
     train_path = dummy.save_path
+    note(f"dummy dataset: {train_path}")
     OUT.mkdir(exist_ok=True)
 
     def run(name: str, extra: list[str]) -> dict:
+        note(f"run {name}: start")
         out = OUT / name
         if out.exists():
             shutil.rmtree(out)
@@ -106,18 +124,27 @@ def main() -> None:
         ]
         env = os.environ.copy()
         env["MODELING_BACKEND"] = "hf"
+        env["TOKENIZERS_PARALLELISM"] = "false"
         t0 = time.time()
-        proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+        log_file = OUT / f"{name}.log"
+        cmd = ["timeout", "900", *cmd]
+        note(f"run {name}: command {' '.join(cmd)}")
+        with log_file.open("w") as log:
+            proc = subprocess.Popen(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                log.write(line)
+                log.flush()
+                print(f"[{name}] {line}", end="", flush=True)
+            returncode = proc.wait(timeout=30)
         elapsed = time.time() - t0
-        (OUT / f"{name}.log").write_text(proc.stdout)
-        result = {"returncode": proc.returncode, "elapsed": elapsed}
+        result = {"returncode": returncode, "elapsed": elapsed}
         log_path = out / "log_dict.json"
         if log_path.exists():
             result.update(json.loads(log_path.read_text()))
         print("RESULT", name, json.dumps(result, allow_nan=True), flush=True)
-        if proc.returncode != 0:
-            print(proc.stdout[-5000:], flush=True)
-            raise SystemExit(proc.returncode)
+        if returncode != 0:
+            raise SystemExit(returncode)
         return result
 
     eager = run("eager", [])

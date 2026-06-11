@@ -23,6 +23,8 @@ srun --ntasks=1 --nodes=1 --gres=gpu:4 \
   --container-remap-root \
   bash -lc '
 set -euo pipefail
+set -x
+export PYTHONUNBUFFERED=1
 export VEOMNI_CG_WORK="'"${WORK}"'"
 export DEPS="${VEOMNI_CG_WORK}/deps"
 export PYTHONPATH="${DEPS}:${VEOMNI_CG_WORK}/VeOmni:${PYTHONPATH:-}"
@@ -50,7 +52,7 @@ if missing:
 print("DEPS_OK", flush=True)
 PY
 
-python "${VEOMNI_CG_WORK}/run_ab_fsdp4.py"
+python -u "${VEOMNI_CG_WORK}/run_ab_fsdp4.py"
 '
 
 date
