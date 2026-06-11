@@ -13,6 +13,12 @@ ROOT = WORK / "bench" / "qwen72b_smoke"
 CONFIG_DIR = ROOT / "qwen2_5_72b_config"
 OUT = ROOT / "out"
 TRAIN_SCRIPT = str(WORK / "VeOmni" / "tests" / "train_scripts" / "train_text_test.py")
+LOCAL_WORLD_SIZE = int(os.environ.get("VEOMNI_TORCHRUN_LOCAL_WORLD_SIZE", "4"))
+NNODES = int(os.environ.get("VEOMNI_TORCHRUN_NNODES", "1"))
+NODE_RANK = int(os.environ.get("VEOMNI_TORCHRUN_NODE_RANK", "0"))
+MASTER_ADDR = os.environ.get("MASTER_ADDR", "127.0.0.1")
+MASTER_PORT = os.environ.get("MASTER_PORT")
+GLOBAL_BATCH_SIZE = int(os.environ.get("VEOMNI_GLOBAL_BATCH_SIZE", str(LOCAL_WORLD_SIZE * NNODES)))
 
 
 def note(message: str) -> None:
@@ -57,15 +63,17 @@ def run_case(name: str, train_path: str, extra: list[str]) -> dict:
         "timeout",
         "3600",
         "torchrun",
-        "--nnodes=1",
-        "--nproc_per_node=4",
-        f"--master_port={port}",
+        f"--nnodes={NNODES}",
+        f"--nproc_per_node={LOCAL_WORLD_SIZE}",
+        f"--node_rank={NODE_RANK}",
+        f"--master_addr={MASTER_ADDR}",
+        f"--master_port={MASTER_PORT or port}",
         TRAIN_SCRIPT,
         f"--model.config_path={CONFIG_DIR}",
         f"--data.train_path={train_path}",
         "--data.dyn_bsz_buffer_size=1",
         "--data.max_seq_len=128",
-        "--train.global_batch_size=4",
+        f"--train.global_batch_size={GLOBAL_BATCH_SIZE}",
         "--train.micro_batch_size=1",
         "--train.init_device=meta",
         "--train.bsz_warmup_ratio=0",
@@ -102,7 +110,7 @@ def run_case(name: str, train_path: str, extra: list[str]) -> dict:
     env = os.environ.copy()
     env["MODELING_BACKEND"] = "hf"
     env["TOKENIZERS_PARALLELISM"] = "false"
-    log_file = OUT / f"{name}.log"
+    log_file = OUT / f"{name}.node{NODE_RANK}.log"
     t0 = time.time()
     note(f"{name}: command {' '.join(cmd)}")
     with log_file.open("w") as log:
@@ -127,6 +135,20 @@ def main() -> None:
     faulthandler.enable(file=sys.stderr)
     faulthandler.dump_traceback_later(180, repeat=True, file=sys.stderr)
     os.environ.setdefault("MODELING_BACKEND", "hf")
+    note(
+        "launcher "
+        + json.dumps(
+            {
+                "local_world_size": LOCAL_WORLD_SIZE,
+                "nnodes": NNODES,
+                "node_rank": NODE_RANK,
+                "master_addr": MASTER_ADDR,
+                "master_port": MASTER_PORT,
+                "global_batch_size": GLOBAL_BATCH_SIZE,
+            },
+            sort_keys=True,
+        )
+    )
     ROOT.mkdir(parents=True, exist_ok=True)
     OUT.mkdir(parents=True, exist_ok=True)
     os.chdir(WORK / "VeOmni")

@@ -2,7 +2,7 @@
 #SBATCH -A nvr_elm_llm
 #SBATCH -p batch
 #SBATCH --qos=short
-#SBATCH -N 1
+#SBATCH -N 2
 #SBATCH --gres=gpu:4
 #SBATCH --time=01:00:00
 #SBATCH -J veomni-qwen72b-cg
@@ -17,7 +17,14 @@ echo "job_id=${SLURM_JOB_ID}"
 echo "node=${SLURM_NODELIST}"
 date
 
-srun --ntasks=1 --nodes=1 --gres=gpu:4 \
+MASTER_ADDR=$(scontrol show hostnames "${SLURM_JOB_NODELIST}" | head -n1)
+MASTER_PORT=$((25000 + SLURM_JOB_ID % 10000))
+GLOBAL_BATCH_SIZE=$((SLURM_NNODES * 4))
+echo "master_addr=${MASTER_ADDR}"
+echo "master_port=${MASTER_PORT}"
+echo "global_batch_size=${GLOBAL_BATCH_SIZE}"
+
+srun --ntasks="${SLURM_NNODES}" --ntasks-per-node=1 --nodes="${SLURM_NNODES}" --gres=gpu:4 \
   --container-image="${IMAGE}" \
   --container-mounts=/lustre:/lustre \
   --container-remap-root \
@@ -29,6 +36,12 @@ export MODELING_BACKEND=hf
 export VEOMNI_CG_WORK="'"${WORK}"'"
 export DEPS="${VEOMNI_CG_WORK}/deps"
 export PYTHONPATH="${DEPS}:${VEOMNI_CG_WORK}/VeOmni:${PYTHONPATH:-}"
+export VEOMNI_TORCHRUN_NNODES="'"${SLURM_NNODES}"'"
+export VEOMNI_TORCHRUN_LOCAL_WORLD_SIZE=4
+export VEOMNI_TORCHRUN_NODE_RANK="${SLURM_NODEID}"
+export VEOMNI_GLOBAL_BATCH_SIZE="'"${GLOBAL_BATCH_SIZE}"'"
+export MASTER_ADDR="'"${MASTER_ADDR}"'"
+export MASTER_PORT="'"${MASTER_PORT}"'"
 cd "${VEOMNI_CG_WORK}/VeOmni"
 
 python - <<PY
