@@ -47,7 +47,7 @@ def prepare_config() -> None:
     note("config " + json.dumps({key: cfg.get(key) for key in keys}, sort_keys=True))
 
 
-def run_case(name: str, extra: list[str]) -> dict:
+def run_case(name: str, train_path: str, extra: list[str]) -> dict:
     note(f"{name}: start")
     out = OUT / name
     if out.exists():
@@ -62,7 +62,7 @@ def run_case(name: str, extra: list[str]) -> dict:
         f"--master_port={port}",
         TRAIN_SCRIPT,
         f"--model.config_path={CONFIG_DIR}",
-        "--data.train_path=dummy_unused",
+        f"--data.train_path={train_path}",
         "--data.dyn_bsz_buffer_size=1",
         "--data.max_seq_len=128",
         "--train.global_batch_size=4",
@@ -130,8 +130,14 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     os.chdir(WORK / "VeOmni")
     prepare_config()
+    from tests.tools import DummyDataset
+
+    dummy = DummyDataset(seq_len=128, dataset_type="text")
+    train_path = dummy.save_path
+    note(f"dummy dataset: {train_path}")
     cuda_graph = run_case(
         "cuda_graph",
+        train_path,
         [
             "--train.cuda_graph.enable=True",
             "--train.cuda_graph.scope=auto",
